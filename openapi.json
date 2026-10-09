@@ -1,0 +1,649 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Urja Meter Ops \u2014 Telemetry & Transformer API",
+    "version": "1.1.0",
+    "description": "Read-only API for smart-meter assets, reported consumption registers, and distribution-transformer relationships extracted from the Urja Meter Ops portal. Timestamps are preserved as displayed without an inferred timezone. kWh and kVAh are register values, not per-interval consumption deltas."
+  },
+  "servers": [
+    {
+      "url": "http://localhost:3000"
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "summary": "Check service health",
+        "responses": {
+          "200": {
+            "description": "Service is running",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "const": "ok"
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Service"
+        ]
+      }
+    },
+    "/api/meters": {
+      "get": {
+        "summary": "List meters",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Case-insensitive search across meter fields."
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Exact case-insensitive installation-status filter."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Meter page",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeterPage"
+                }
+              }
+            }
+          },
+          "502": {
+            "$ref": "#/components/responses/UpstreamError"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          }
+        },
+        "tags": [
+          "Meter Assets"
+        ]
+      }
+    },
+    "/api/meters/{meterId}": {
+      "get": {
+        "summary": "Get meter details and consumption",
+        "parameters": [
+          {
+            "name": "meterId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Meter detail",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeterDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "502": {
+            "$ref": "#/components/responses/UpstreamError"
+          }
+        },
+        "tags": [
+          "Meter Assets"
+        ]
+      }
+    },
+    "/api/transformers": {
+      "get": {
+        "summary": "List distribution transformers",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Transformer page",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransformerPage"
+                }
+              }
+            }
+          },
+          "502": {
+            "$ref": "#/components/responses/UpstreamError"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          }
+        },
+        "tags": [
+          "Distribution Network"
+        ]
+      }
+    },
+    "/api/transformers/{code}/meters": {
+      "get": {
+        "tags": [
+          "Distribution Network"
+        ],
+        "summary": "List meters linked to a distribution transformer",
+        "description": "Uses the meter inventory transformerCode to match an existing transformer code. Relationship is derived from portal records.",
+        "parameters": [
+          {
+            "name": "code",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "DT-001"
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated linked meters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeterPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "502": {
+            "$ref": "#/components/responses/UpstreamError"
+          }
+        }
+      }
+    },
+    "/api/meters/{meterId}/readings": {
+      "get": {
+        "tags": [
+          "Consumption Telemetry"
+        ],
+        "summary": "Get available readings for a meter",
+        "description": "Returns the reported half-hourly reading table without converting cumulative kWh/kVAh registers into interval consumption. Timestamp timezone is unspecified by the portal.",
+        "parameters": [
+          {
+            "name": "meterId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "J100000"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Meter readings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeterReadings"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "502": {
+            "$ref": "#/components/responses/UpstreamError"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "responses": {
+      "NotFound": {
+        "description": "Meter ID was not found",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "UpstreamError": {
+        "description": "Portal could not be read",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "BadRequest": {
+        "description": "Invalid query parameters",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "Pagination": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer"
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "total": {
+            "type": "integer"
+          },
+          "totalPages": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "page",
+          "limit",
+          "total",
+          "totalPages"
+        ]
+      },
+      "Meter": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "meterId": {
+            "type": "string"
+          },
+          "serialNumber": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "make": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "phaseType": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "installationStatus": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "transformerCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "meterId"
+        ]
+      },
+      "Transformer": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "feederCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "capacityKva": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "code"
+        ]
+      },
+      "MeterPage": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Meter"
+            }
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/Pagination"
+          }
+        },
+        "required": [
+          "data",
+          "pagination"
+        ]
+      },
+      "TransformerPage": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Transformer"
+            }
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/Pagination"
+          }
+        },
+        "required": [
+          "data",
+          "pagination"
+        ]
+      },
+      "Reading": {
+        "type": "object",
+        "properties": {
+          "timestamp": {
+            "type": "string",
+            "description": "Portal display time; timezone unspecified"
+          },
+          "kwh": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Reported cumulative active energy register (kWh); not interval energy"
+          },
+          "kvah": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Reported cumulative apparent energy register (kVAh); not interval energy"
+          },
+          "voltageR": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Reported phase-R voltage"
+          }
+        },
+        "required": [
+          "timestamp",
+          "kwh",
+          "kvah",
+          "voltageR"
+        ]
+      },
+      "MeterDetail": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "nameplate": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "networkPath": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "location": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "latitude": {
+                    "type": "number"
+                  },
+                  "longitude": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "latitude",
+                  "longitude"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "consumption": {
+            "type": "object",
+            "properties": {
+              "latest": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "intervalMinutes": {
+                "type": "integer",
+                "const": 30
+              },
+              "readings": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Reading"
+                }
+              }
+            },
+            "required": [
+              "latest",
+              "intervalMinutes",
+              "readings"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "nameplate",
+          "networkPath",
+          "location",
+          "consumption"
+        ]
+      },
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "detail": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ]
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "MeterReadings": {
+        "type": "object",
+        "properties": {
+          "meterId": {
+            "type": "string"
+          },
+          "latest": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Latest reading label as reported by portal"
+          },
+          "intervalMinutes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Reported sampling interval, if available"
+          },
+          "readings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Reading"
+            }
+          }
+        },
+        "required": [
+          "meterId",
+          "latest",
+          "intervalMinutes",
+          "readings"
+        ]
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "Meter Assets",
+      "description": "Meter inventory and nameplate information"
+    },
+    {
+      "name": "Consumption Telemetry",
+      "description": "Reported meter readings and timestamps"
+    },
+    {
+      "name": "Distribution Network",
+      "description": "Distribution transformers and linked meter assets"
+    },
+    {
+      "name": "Service",
+      "description": "Operational checks"
+    }
+  ]
+}
