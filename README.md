@@ -1,24 +1,44 @@
-# Urja Meter API
+# Urja Meter Ops — Telemetry API & Field Operations Dashboard
 
-A small, read-only JSON API in front of the Urja Meter Ops portal. The service signs in with a configured operator account, reads the portal's existing tables and meter detail pages, and returns stable JSON responses for other programs.
+A read-only Node.js REST API and lightweight field operations dashboard for the legacy **Urja Meter Ops** portal. The backend authenticates to the portal through Playwright, extracts meter and distribution-transformer records, and exposes structured JSON. The frontend helps technicians search equipment, inspect recorded statuses and historical meter readings, and navigate transformer-to-meter relationships.
 
-## What is included
+**Tech stack:** Node.js · Playwright · HTML · CSS · JavaScript · OpenAPI 3.1
 
-- `GET /api/meters` — paginated meter inventory, with optional `search` and `status` filters.
-- `GET /api/meters/{meterId}` — meter nameplate, network path, coordinates, and half-hourly consumption readings.
-- `GET /api/transformers` — paginated distribution-transformer inventory.
-- `GET /health` — process health check.
-- `openapi.json` — OpenAPI 3.1 contract.
-- [`PROTOCOL.md`](./PROTOCOL.md) — portal behavior observed during investigation.
+## Field Operations Dashboard
 
-The code is deliberately compact: `src/portal.js` owns the authenticated browser session and portal extraction; `src/server.js` maps HTTP requests to JSON responses. A single browser page is shared and access is serialized to avoid concurrent navigation races.
+The dashboard is intentionally minimal: **search → inspect equipment → review readings or connected meters**. It uses the existing REST API and does not require a separate frontend build or server.
 
-## Requirements and setup
+- **Meter lookup:** Search by Meter ID; view serial number, manufacturer, phase, reported installation status, and associated transformer.
+- **Transformer lookup:** Search by transformer code; view transformer name, feeder, capacity, and associated meters.
+- **Simple graphs:** Historical cumulative **kWh** and recorded **phase-R voltage** for meters with readings.
+- **Technician conveniences:** Copy equipment IDs, manually refresh, and see clear missing-data/error messages.
+- **Overview:** Meter and transformer inventory totals and the local API process status.
 
-- Node.js 20 or newer
-- npm
-- Playwright's Chromium browser (installed once with the command below), or Google Chrome if `BROWSER_CHANNEL=chrome` is set
-- A portal login with read access
+> **Data interpretation:** `Faulty`, `Installed`, and `Decommissioned` are reported *installation statuses*, not real-time diagnostics. The graphs show historical portal readings, not a predictive health score. Transformer health is not inferred from the available metadata.
+
+### Dashboard screenshots
+
+The screenshots below show the read-only field interface. They illustrate meter and transformer searches and related details; displayed readings are historical records rather than live fault diagnoses.
+
+**Meter J100004**
+
+![Meter J100004 — dashboard view 1](./screenshots/J100004-1.png)
+
+![Meter J100004 — dashboard view 2](./screenshots/J100004-2.png)
+
+**Transformer DT-005**
+
+![Transformer DT-005 — dashboard view 1](./screenshots/DT005-1.png)
+
+![Transformer DT-005 — dashboard view 2](./screenshots/DT005-2.png)
+
+## Getting started
+
+### Requirements
+
+- Node.js 20 or newer, npm
+- Playwright Chromium (or installed Google Chrome with `BROWSER_CHANNEL=chrome`)
+- Authorized read access to the Urja Meter Ops portal
 
 ```sh
 npm install
@@ -26,23 +46,45 @@ npx playwright install chromium
 cp .env.example .env
 ```
 
-Edit `.env` and set `PORTAL_USERNAME` and `PORTAL_PASSWORD`. The start scripts load `.env` with Node's `--env-file` option. Do not commit `.env` or put credentials in source control. Then run:
+Edit `.env` with `PORTAL_USERNAME` and `PORTAL_PASSWORD`. **Never commit `.env`, browser sessions, or credentials.**
 
 ```sh
 npm start
 ```
 
-The API binds to `127.0.0.1:3000` by default. `HOST`, `PORT`, `PORTAL_BASE_URL`, `CACHE_TTL_SECONDS`, and `HEADLESS` can be configured as environment variables. Set `HEADLESS=false` to watch the portal session while debugging; set `BROWSER_CHANNEL=chrome` to use installed Google Chrome instead of downloading Playwright's Chromium. Keep the bind address local unless you add API authentication and network controls.
+The service binds to `127.0.0.1:3000` by default.
 
-## Example requests
+| Local URL | Purpose |
+| --- | --- |
+| `http://localhost:3000/` | Technician-facing field operations dashboard |
+| `http://localhost:3000/docs` | Interactive Swagger API documentation |
+| `http://localhost:3000/openapi.json` | OpenAPI 3.1 contract |
+| `http://localhost:3000/health` | API process health check |
+
+Configuration options include `HOST`, `PORT`, `PORTAL_BASE_URL`, `CACHE_TTL_SECONDS`, `HEADLESS`, and `BROWSER_CHANNEL`. Set `HEADLESS=false` to watch browser automation during debugging. Keep the API bound to localhost unless downstream authentication and network protections are added.
+
+## REST API
+
+| Area | Endpoint | Purpose |
+| --- | --- | --- |
+| Meter inventory | `GET /api/meters` | Paginated inventory with optional `search` and `status` |
+| Meter details | `GET /api/meters/{meterId}` | Nameplate, location, network path, and telemetry |
+| Meter readings | `GET /api/meters/{meterId}/readings` | Reported meter readings |
+| Transformers | `GET /api/transformers` | Paginated transformer inventory |
+| Relationships | `GET /api/transformers/{code}/meters` | Meters linked to a transformer code |
+| Service | `GET /health` | Local server process status |
+
+Example queries:
 
 ```sh
 curl 'http://localhost:3000/api/meters?page=1&limit=5&status=Installed'
 curl 'http://localhost:3000/api/meters/J100000'
+curl 'http://localhost:3000/api/meters/J100000/readings'
 curl 'http://localhost:3000/api/transformers?page=1&limit=20'
+curl 'http://localhost:3000/api/transformers/DT-001/meters?page=1&limit=10'
 ```
 
-Example detail response (values abbreviated):
+Example meter detail (abbreviated):
 
 ```json
 {
@@ -52,86 +94,80 @@ Example detail response (values abbreviated):
     "serialNo": "SE33962",
     "make": "HPL",
     "phaseType": "single",
-    "installationStatus": "Decommissioned",
-    "installationType": "Whole Current"
+    "installationStatus": "Decommissioned"
   },
-  "networkPath": ["Jaipur Zone 1 (Z-01)", "Circle 1 (C-01)", "…"],
+  "networkPath": ["Jaipur Zone 1 (Z-01)", "Circle 1 (C-01)"],
   "location": { "latitude": 26.938961002479868, "longitude": 75.83095696146852 },
   "consumption": {
     "latest": "30/06/2026 23:30",
     "intervalMinutes": 30,
-    "readings": [{ "timestamp": "23/06/2026 23:30", "kwh": 48438.74, "kvah": 52313.84, "voltageR": 226 }]
+    "readings": [
+      { "timestamp": "23/06/2026 23:30", "kwh": 48438.74, "kvah": 52313.84, "voltageR": 226 }
+    ]
   }
 }
 ```
 
-## Assumptions and decisions
+See [`openapi.json`](./openapi.json) for the API contract and [`PROTOCOL.md`](./PROTOCOL.md) for portal investigation details. Swagger UI at `/docs` supports **Try it out** and loads its assets from `unpkg.com` (requires internet access for the documentation UI).
 
-- The service is read-only. It does not submit portal changes or expose the sign-out action.
-- The operator credentials are supplied at runtime. The portal's session remains inside the service process and is not returned to API callers.
-- The portal shows 20 rows per page. The API reads every visible page before applying its own `page`/`limit` and filters, so totals describe the complete observed inventory rather than only the current portal page.
-- Meter consumption timestamps and units are returned as displayed by the portal. No timezone is appended because the portal does not label one.
-- Responses are cached in memory for 30 seconds by default. This reduces repeated portal navigation while keeping the service reasonably fresh. Restarting the process clears the cache.
-- Requests are serialized through one browser page. This is a simple correctness choice for a take-home-sized portal; it limits parallel throughput.
+### Data semantics and validation
 
-## Intentionally skipped
+- **Telemetry:** `kwh` and `kvah` are cumulative meter registers, **not per-interval consumption**. The frontend plots original reported values; it does not calculate consumption differences. `voltageR` is reported phase-R voltage.
+- **Timestamps:** Preserved as displayed by the portal; no UTC/IST timezone is inferred.
+- **Network relationships:** Transformer `feederCode` and meter `transformerCode` provide logical associations, **not** a verified physical electrical topology.
+- **Request errors:** Invalid pagination returns `400`; unknown assets return `404`; failed upstream extraction returns `502`.
+- **Health endpoint:** `/health` confirms the local process is responding, not that the upstream portal is reachable.
 
-- Persistent storage, scheduled synchronization, background jobs, and multi-user authentication.
-- Bulk export ingestion. The portal exposes an “Export all meters” control and confirmed an export of 403 meters, but the first cut reads the same paginated UI used by operators so record interpretation stays consistent.
-- Transformer hierarchy traversal, geospatial search, charts, and a frontend.
-- Retries beyond the browser's default navigation behavior, metrics, and deployment configuration.
+## Architecture
 
-## Improvements with more time
+```text
+Urja Meter Ops portal (online)
+             |
+    Playwright authentication
+       and page extraction
+             |
+    Node.js REST API + cache
+         /           \
+  Field dashboard    Swagger / JSON clients
+  HTML/CSS/JS
+```
 
-First, inspect the portal's supported data interface or request a stable upstream integration contract, then replace UI automation with authenticated HTTP calls if one exists. Next, add explicit retries and upstream error classification, structured logs, cache invalidation, and tests against captured portal fixtures. For larger inventories, prefer the bulk export or incremental sync and a local indexed store. Add rate limiting and API authentication before exposing this service beyond a trusted local network.
+- `src/portal.js` handles the authenticated Playwright browser, parsing, and serialized navigation.
+- `src/server.js` serves read-only JSON endpoints, Swagger documentation, and dashboard files.
+- `public/` contains the static dashboard and Swagger initialization script.
+- `openapi.json` documents the supported API.
+
+The portal presents 20 rows per page; the backend reads the observed pages to build inventory, then applies API pagination and filtering. API data is cached in memory for **30 seconds by default**, and the single browser page serializes access to avoid navigation races. This design is compact and simple, but limits concurrency and depends on the portal's markup.
+
+## Tests
+
+```sh
+npm test
+```
+
+Tests cover selected request-processing behaviors. Browser extraction remains coupled to upstream HTML and would benefit from fixture-based integration tests.
+
+## Assumptions, scope and trade-offs
+
+- The authorized portal's list and detail pages are treated as the source of truth.
+- The API and dashboard are **read-only**; credentials and browser sessions stay on the server.
+- No new database, user accounts, write operations, predictive alerts, geospatial routing, or deployment infrastructure.
+- The portal offers a bulk meter export, but this implementation traverses paginated UI records for consistent interpretation.
+- Transformer-to-meter lookups use observed codes and do not imply complete physical network connectivity.
+- Browser automation is a pragmatic bridge rather than a stable upstream integration contract.
 
 ## Reflection
 
-**What assumptions did you make?** I treated the signed-in portal's list and detail pages as the source of truth, assumed the current user has read-only access, and preserved displayed timestamps without inventing a timezone.
+**What assumptions did you make?** I used authenticated portal pages as the data source, assumed the configured operator has read access, and preserved timestamps without inventing a timezone.
 
-**Which part was most difficult, and how did you get unstuck?** The brief gives no API contract. I signed into the portal, followed a meter link, inspected its fields and consumption table, then checked the transformer list and bulk-export control to establish the data shape and inventory size.
+**What was most difficult?** The task did not provide an API contract. I inspected meter details, telemetry tables, transformer inventory, and export behavior to establish the available data shape and relationships.
 
-**If you had another day, what would you improve?** I would identify and validate the portal's supported upstream data interface, add captured-page tests and retry/health behavior, and compare bulk export against paginated records.
+**What mistake did you make?** I initially interpreted an unloaded transformer table as empty. Triggering its export control completed the load, exposing the first 20 rows and confirming a second page.
 
-**What mistake did you make while solving this?** I initially assumed the empty transformer table meant there were no rows. Triggering the page's export action finished its load, revealed the 20-row first page, and confirmed two pages of transformer data.
+**If you had another day?** I would verify a supported upstream integration interface, add captured-page tests and retry classification, compare bulk export to paginated data, and improve cache invalidation and operational logging.
 
-**What would you criticise in this submission?** Browser-driven extraction is coupled to portal markup and one shared page limits concurrency. It is a pragmatic bridge for the observed interface, not a durable integration contract; a supported HTTP interface and fixture-based tests should replace or validate it.
+**What would you criticize?** HTML scraping can break when portal markup changes, and one shared browser page limits throughput. A supported authenticated HTTP interface and fixture-based extraction tests would make this more robust.
 
-## API documentation
+## Security
 
-See [`openapi.json`](./openapi.json) for the machine-readable API contract.
-
-## Interactive API explorer (enhancement)
-
-After `npm start`, open **[http://localhost:3000/docs](http://localhost:3000/docs)** to browse the OpenAPI endpoints and use **Try it out** against your own local service. The explorer loads Swagger UI assets from `unpkg.com`, so the browser needs internet access; the API itself does not depend on this CDN. The machine-readable spec is also served at [`/openapi.json`](http://localhost:3000/openapi.json) and is committed as `openapi.json`.
-
-### Endpoint overview
-
-| Area | Endpoint | Purpose |
-| --- | --- | --- |
-| Meter assets | `GET /api/meters` | Search/filter/paginate meter inventory |
-| Meter assets | `GET /api/meters/{meterId}` | Full meter nameplate, network path, coordinates, and readings |
-| Consumption telemetry | `GET /api/meters/{meterId}/readings` | Isolate reported half-hour readings for a meter |
-| Distribution network | `GET /api/transformers` | Transformer code, name, feeder, and capacity |
-| Distribution network | `GET /api/transformers/{code}/meters` | Find meters whose `transformerCode` matches an existing transformer |
-| Service | `GET /health` | Local process health; does not verify upstream reachability |
-
-Sample enhanced requests:
-
-```sh
-curl 'http://localhost:3000/api/transformers/DT-001/meters?page=1&limit=10'
-curl 'http://localhost:3000/api/meters/J100000/readings'
-curl 'http://localhost:3000/api/meters?page=1&limit=5'
-```
-
-**Telemetry semantics:** `kwh` and `kvah` are *reported cumulative meter registers*; differences between readings may help derive interval energy only after validating meter resets, rollovers and ordering. We intentionally do not label raw values as 30-minute usage. The displayed timestamp has no confirmed timezone, so it is not silently converted to UTC. `voltageR` represents reported phase-R voltage.
-
-**Network semantics:** `feederCode` is a property of a transformer, while `transformerCode` comes from the meter list. The transformer-to-meters endpoint joins these observed attributes; it does not infer unobserved network edges or missing relationships.
-
-**Validation:** page and limit must be positive integers, and limit cannot exceed 100; invalid values return a structured `400 invalid_request` response. Missing meters or transformers return `404 not_found`. Upstream portal extraction failures return `502 upstream_error`. Requests are read-only.
-
-**Freshness & limitations:** cached inventory/detail data expire after `CACHE_TTL_SECONDS` (default: 30 seconds). This is an in-process TTL, not a background sync. Browser extraction depends on the portal's HTML layout and serializes requests through a single authenticated browser page. The `/docs` assets are delivered by a public CDN; for offline documentation, use the checked-in `openapi.json` with a locally installed OpenAPI viewer.
-
-## Security before publishing
-
-Never commit `.env`, cookies, browser storage, or trace files. The service binds to localhost by default and does not authenticate its own downstream API callers. It must not be exposed publicly without suitable authentication and network access controls. `.env.example` must contain placeholders only.
+Do not commit `.env`, passwords, cookies, browser storage, or traces. `.env.example` must contain placeholders only. The local API has no separate downstream authentication and should **not** be exposed publicly without appropriate access controls.
