@@ -56,6 +56,21 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host ?? "localhost"}`);
   try {
     if (req.method !== "GET") return json(res, 405, { error: { code: "method_not_allowed", message: "Only GET is supported." } });
+
+    // Add this immediately after the req.method !== "GET" check in src/server.js:
+    const staticFiles = {
+      '/': ['../public/index.html', 'text/html; charset=utf-8'],
+      '/styles.css': ['../public/styles.css', 'text/css; charset=utf-8'],
+      '/app.js': ['../public/app.js', 'application/javascript; charset=utf-8'],
+    };
+    if (Object.hasOwn(staticFiles, url.pathname)) {
+      const [path, type] = staticFiles[url.pathname];
+      const body = await readFile(new URL(path, import.meta.url));
+      res.writeHead(200, { 'content-type': type, 'cache-control': 'no-store' });
+      return res.end(body);
+    }
+
+
     if (url.pathname === "/openapi.json") {
       res.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
       return res.end(openapi);

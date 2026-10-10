@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f6f8fc">
+  <title>Urja Field Ops | Equipment Lookup</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <main class="shell">
+    <header class="header">
+      <div><div class="brand">⚡ Urja Field Ops</div><p class="muted">Meter & transformer lookup</p></div>
+      <div class="header-actions"><span id="api-status" class="pill">Checking API…</span><a href="/docs" target="_blank" rel="noopener">API Docs ↗</a></div>
+    </header>
+    <section class="stats" aria-label="Inventory overview">
+      <div class="stat"><span class="muted">Meters</span><strong id="meter-total">—</strong></div>
+      <div class="stat"><span class="muted">Transformers</span><strong id="transformer-total">—</strong></div>
+    </section>
+    <section class="panel search-panel" aria-label="Equipment search">
+      <h1>Find equipment</h1>
+      <p class="muted">Enter an exact meter ID or transformer code.</p>
+      <form id="lookup-form">
+        <div class="type-toggle" role="group" aria-label="Equipment type">
+          <label><input type="radio" name="kind" value="meter" checked><span>Meter</span></label>
+          <label><input type="radio" name="kind" value="transformer"><span>Transformer</span></label>
+        </div>
+        <div class="search-row"><input id="equipment-id" autocomplete="off" spellcheck="false" placeholder="e.g. J100004" aria-label="Equipment ID" required><button type="submit" id="search-button">Search</button></div>
+      </form>
+      <p class="feedback" id="feedback" role="status" aria-live="polite"></p>
+    </section>
+    <section id="result" class="result" aria-live="polite" aria-label="Equipment details" hidden></section>
+    <footer>Read-only · Records and readings are reported by the Urja Ops portal. Status is not a real-time diagnostic.</footer>
+  </main>
+</body>
+</html>
