@@ -1,4 +1,4 @@
-# Urja Meter Ops — Telemetry API & Field Operations Dashboard
+# ⚡ urja-telemetry-tracker-api
 
 A read-only Node.js REST API and lightweight field operations dashboard for the legacy **Urja Meter Ops** portal. The backend authenticates to the portal through Playwright, extracts meter and distribution-transformer records, and exposes structured JSON. The frontend helps technicians search equipment, inspect recorded statuses and historical meter readings, and navigate transformer-to-meter relationships.
 
