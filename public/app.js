@@ -159,3 +159,396 @@ async function overview() {
   if (transformers.status === 'fulfilled') $('transformer-total').textContent = transformers.value.pagination.total;
 }
 overview();
+
+
+/* ==========================================================
+   URJA FIELD OPS — INVENTORY EXPLORER
+   Uses the existing read-only REST API.
+   ========================================================== */
+
+let allInventoryMeters = [];
+let inventoryLoaded = false;
+
+function createInventoryExplorer() {
+  const section = document.createElement("section");
+  section.className = "panel inventory-explorer";
+
+  section.innerHTML = `
+    <details id="inventory-details">
+      <summary class="inventory-toggle">
+        <span>
+          <strong>Meter Inventory Explorer</strong>
+          <small>Browse equipment and reported installation statuses</small>
+        </span>
+        <span class="inventory-arrow">⌄</span>
+      </summary>
+
+      <div class="inventory-content">
+        <p class="muted" id="inventory-message">
+          Expand to load meter inventory from the API.
+        </p>
+
+        <div id="inventory-summary" class="inventory-summary" hidden>
+          <div class="inventory-stat">
+            <strong id="count-installed">0</strong>
+            <span>Installed</span>
+          </div>
+
+          <div class="inventory-stat">
+            <strong id="count-faulty">0</strong>
+            <span>Faulty</span>
+          </div>
+
+          <div class="inventory-stat">
+            <strong id="count-decommissioned">0</strong>
+            <span>Decommissioned</span>
+          </div>
+        </div>
+
+        <div id="inventory-distribution"
+             class="inventory-distribution"
+             hidden></div>
+
+        <div class="inventory-controls">
+          <input
+            id="inventory-search"
+            type="search"
+            placeholder="Search meter, serial, make or transformer"
+            aria-label="Search inventory"
+          />
+
+          <select id="inventory-status" aria-label="Filter status">
+            <option value="">All statuses</option>
+            <option value="Installed">Installed</option>
+            <option value="Faulty">Faulty</option>
+            <option value="Decommissioned">Decommissioned</option>
+          </select>
+        </div>
+
+        <p id="inventory-count" class="muted"></p>
+
+        <div class="inventory-table-wrap">
+          <table class="inventory-table">
+            <thead>
+              <tr>
+                <th>Meter ID</th>
+                <th>Make</th>
+                <th>Status</th>
+                <th>Transformer</th>
+              </tr>
+            </thead>
+            <tbody id="inventory-rows"></tbody>
+          </table>
+        </div>
+
+        <div class="inventory-pagination">
+          <button type="button" class="secondary small"
+                  id="inventory-prev">Previous</button>
+
+          <span id="inventory-page">Page 1</span>
+
+          <button type="button" class="secondary small"
+                  id="inventory-next">Next</button>
+        </div>
+      </div>
+    </details>
+  `;
+
+  // Place after equipment details, before the footer.
+  document.querySelector("#result").after(section);
+
+  const details = document.getElementById("inventory-details");
+
+  details.addEventListener("toggle", () => {
+    if (details.open && !inventoryLoaded) {
+      loadInventory();
+    }
+  });
+
+  document.getElementById("inventory-search")
+    .addEventListener("input", () => {
+      inventoryPage = 1;
+      renderInventory();
+    });
+
+  document.getElementById("inventory-status")
+    .addEventListener("change", () => {
+      inventoryPage = 1;
+      renderInventory();
+    });
+
+  document.getElementById("inventory-prev")
+    .addEventListener("click", () => {
+      if (inventoryPage > 1) {
+        inventoryPage--;
+        renderInventory();
+      }
+    });
+
+  document.getElementById("inventory-next")
+    .addEventListener("click", () => {
+      inventoryPage++;
+      renderInventory();
+    });
+}
+
+let inventoryPage = 1;
+const INVENTORY_PAGE_SIZE = 12;
+
+async function loadInventory() {
+  const message = document.getElementById("inventory-message");
+
+  message.textContent = "Loading meter inventory…";
+
+  try {
+    const first = await get("/api/meters?page=1&limit=100");
+
+    let meters = [...first.data];
+    const totalPages = first.pagination?.totalPages || 1;
+
+    // The API supports up to 100 records per request.
+    for (let page = 2; page <= totalPages; page++) {
+      const response = await get(
+        `/api/meters?page=${page}&limit=100`
+      );
+
+      meters.push(...response.data);
+    }
+
+    allInventoryMeters = meters;
+    inventoryLoaded = true;
+
+    message.textContent =
+      `${meters.length} meter records loaded from the API.`;
+
+    renderInventorySummary();
+    renderInventory();
+
+  } catch (error) {
+    message.textContent =
+      `Unable to load inventory: ${error.message}`;
+  }
+}
+
+function countStatuses(meters) {
+  return meters.reduce(
+    (counts, meter) => {
+      const status = meter.installationStatus;
+
+      if (status === "Installed") counts.installed++;
+      else if (status === "Faulty") counts.faulty++;
+      else if (status === "Decommissioned") {
+        counts.decommissioned++;
+      }
+
+      return counts;
+    },
+    { installed: 0, faulty: 0, decommissioned: 0 }
+  );
+}
+
+function renderInventorySummary() {
+  const counts = countStatuses(allInventoryMeters);
+  const total = allInventoryMeters.length || 1;
+
+  document.getElementById("count-installed").textContent =
+    counts.installed;
+
+  document.getElementById("count-faulty").textContent =
+    counts.faulty;
+
+  document.getElementById("count-decommissioned").textContent =
+    counts.decommissioned;
+
+  document.getElementById("inventory-summary").hidden = false;
+
+  const distribution =
+    document.getElementById("inventory-distribution");
+
+  distribution.replaceChildren();
+
+  const segments = [
+    ["installed", counts.installed],
+    ["faulty", counts.faulty],
+    ["decommissioned", counts.decommissioned]
+  ];
+
+  for (const [status, count] of segments) {
+    const segment = document.createElement("div");
+    segment.className = `distribution-${status}`;
+    segment.style.width = `${(count / total) * 100}%`;
+    segment.title = `${status}: ${count}`;
+    distribution.append(segment);
+  }
+
+  distribution.hidden = false;
+}
+
+function getFilteredInventory() {
+  const search = document.getElementById("inventory-search")
+    .value.trim().toLowerCase();
+
+  const status = document.getElementById("inventory-status")
+    .value;
+
+  return allInventoryMeters.filter((meter) => {
+    const searchable = [
+      meter.meterId,
+      meter.id,
+      meter.serialNumber,
+      meter.make,
+      meter.transformerCode
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+
+    const matchesSearch = searchable.includes(search);
+
+    const matchesStatus =
+      !status || meter.installationStatus === status;
+
+    return matchesSearch && matchesStatus;
+  });
+}
+
+function renderInventory() {
+  if (!inventoryLoaded) return;
+
+  const filtered = getFilteredInventory();
+
+  const totalPages = Math.max(
+    1,
+    Math.ceil(filtered.length / INVENTORY_PAGE_SIZE)
+  );
+
+  inventoryPage = Math.min(inventoryPage, totalPages);
+
+  const start = (inventoryPage - 1) * INVENTORY_PAGE_SIZE;
+
+  const visible = filtered.slice(
+    start,
+    start + INVENTORY_PAGE_SIZE
+  );
+
+  const tbody = document.getElementById("inventory-rows");
+  tbody.replaceChildren();
+
+  for (const meter of visible) {
+    const tr = document.createElement("tr");
+
+    const meterCell = document.createElement("td");
+    const meterButton = document.createElement("button");
+
+    meterButton.type = "button";
+    meterButton.className = "inventory-link";
+    meterButton.textContent = meter.meterId || meter.id;
+
+    meterButton.addEventListener("click", () => {
+      lookup("meter", meter.meterId || meter.id);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+
+    meterCell.append(meterButton);
+
+    const makeCell = document.createElement("td");
+    makeCell.textContent = meter.make || "—";
+
+    const statusCell = document.createElement("td");
+    statusCell.append(statusChip(meter.installationStatus));
+
+    const transformerCell = document.createElement("td");
+
+    if (meter.transformerCode) {
+      const transformerButton = document.createElement("button");
+      transformerButton.type = "button";
+      transformerButton.className = "inventory-link";
+      transformerButton.textContent = meter.transformerCode;
+
+      transformerButton.addEventListener("click", () => {
+        lookup("transformer", meter.transformerCode);
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      });
+
+      transformerCell.append(transformerButton);
+    } else {
+      transformerCell.textContent = "—";
+    }
+
+    tr.append(
+      meterCell,
+      makeCell,
+      statusCell,
+      transformerCell
+    );
+
+    tbody.append(tr);
+  }
+
+  document.getElementById("inventory-count").textContent =
+    `${filtered.length} matching meter(s)`;
+
+  document.getElementById("inventory-page").textContent =
+    `Page ${inventoryPage} of ${totalPages}`;
+
+  document.getElementById("inventory-prev").disabled =
+    inventoryPage === 1;
+
+  document.getElementById("inventory-next").disabled =
+    inventoryPage >= totalPages;
+}
+
+/* Transformer-specific status summary */
+
+const originalOpenTransformer = openTransformer;
+
+openTransformer = async function (code, version) {
+  await originalOpenTransformer(code, version);
+
+  if (version !== lookupVersion) return;
+
+  const meterList = result.querySelector(".linked-list");
+
+  if (!meterList) return;
+
+  const statuses = Array.from(
+    meterList.querySelectorAll(".status")
+  ).map((element) => element.textContent.trim());
+
+  const counts = {
+    Installed: 0,
+    Faulty: 0,
+    Decommissioned: 0
+  };
+
+  for (const status of statuses) {
+    if (Object.prototype.hasOwnProperty.call(counts, status)) {
+      counts[status]++;
+    }
+  }
+
+  const summary = document.createElement("div");
+  summary.className = "inventory-summary transformer-summary";
+
+  for (const [status, count] of Object.entries(counts)) {
+    const item = document.createElement("div");
+    item.className = "inventory-stat";
+
+    const number = document.createElement("strong");
+    number.textContent = count;
+
+    const label = document.createElement("span");
+    label.textContent = status;
+
+    item.append(number, label);
+    summary.append(item);
+  }
+
+  meterList.before(summary);
+};
+
+// Initialize the explorer without modifying the HTML file.
+createInventoryExplorer();
+
+
+
