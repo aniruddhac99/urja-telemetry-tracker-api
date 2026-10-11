@@ -32,6 +32,14 @@ The screenshots below show the read-only field interface. They illustrate meter 
 
 ![Transformer DT-005 — dashboard view 2](./screenshots/DT005-2.png)
 
+
+### Meter Inventory Explorer
+
+Browse all 403 smart meters through a searchable, paginated inventory. Filter by reported installation status, inspect the status distribution, and navigate directly to meter or transformer details.
+
+![Urja Meter Inventory Explorer](./screenshots/meter-inventory-explorer.png)
+
+
 ## Getting started
 
 ### Requirements
