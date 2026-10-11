@@ -1,6 +1,6 @@
-# ⚡ urja-telemetry-tracker-api
+# Urja Meter Ops — Telemetry API & Field Operations Dashboard
 
-read-only Node.js REST API and lightweight field operations dashboard for legacy **Urja Meter Ops** portal. The backend authenticates to the portal through Playwright, extracts meter and distribution-transformer records, and exposes structured JSON. The frontend helps technicians search equipment, inspect recorded statuses and historical meter readings, and navigate transformer-to-meter relationships.
+A read-only Node.js REST API and lightweight field operations dashboard for the legacy **Urja Meter Ops** portal. The backend authenticates to the portal through Playwright, extracts meter and distribution-transformer records, and exposes structured JSON. The frontend helps technicians search equipment, inspect recorded statuses and historical meter readings, and navigate transformer-to-meter relationships.
 
 **Tech stack:** Node.js · Playwright · HTML · CSS · JavaScript · OpenAPI 3.1
 
@@ -125,7 +125,7 @@ Example meter detail (abbreviated):
 
 See [`openapi.json`](./openapi.json) for the API contract and [`PROTOCOL.md`](./PROTOCOL.md) for portal investigation details. Swagger UI at `/docs` supports **Try it out** and loads its assets from `unpkg.com` (requires internet access for the documentation UI).
 
-### Data semantics and validation
+### Data semantics & validation
 
 - **Telemetry:** `kwh` and `kvah` are cumulative meter registers, **not per-interval consumption**. The frontend plots original reported values; it does not calculate consumption differences. `voltageR` is reported phase-R voltage.
 - **Timestamps:** Preserved as displayed by the portal; no UTC/IST timezone is inferred.
@@ -133,19 +133,36 @@ See [`openapi.json`](./openapi.json) for the API contract and [`PROTOCOL.md`](./
 - **Request errors:** Invalid pagination returns `400`; unknown assets return `404`; failed upstream extraction returns `502`.
 - **Health endpoint:** `/health` confirms the local process is responding, not that the upstream portal is reachable.
 
-## Architecture
 
-```text
-Urja Meter Ops portal (online)
-             |
-    Playwright authentication
-       and page extraction
-             |
-    Node.js REST API + cache
-         /           \
-  Field dashboard    Swagger / JSON clients
-  HTML/CSS/JS
+## High-Level Architecture (HLD)
+
+```mermaid
+flowchart TB
+    U["Field Technician / API Consumer"]
+
+    subgraph CLIENT["Presentation Layer"]
+        UI["Field Operations Dashboard<br/>HTML / CSS / JavaScript"]
+        DOCS["Swagger UI<br/>OpenAPI 3.1"]
+    end
+
+    subgraph BACKEND["Node.js Backend Service"]
+        API["REST API<br/>Routing / Validation / Pagination"]
+        CACHE["In-Memory Cache<br/>30-second TTL"]
+        PW["Playwright<br/>Authenticated Browser Extraction"]
+
+        API <--> CACHE
+        API --> PW
+    end
+
+    PORTAL["Legacy Urja Meter Ops Portal<br/>External Online System"]
+
+    U --> UI
+    U --> DOCS
+    UI <-->|HTTP / JSON| API
+    DOCS <-->|HTTP / JSON| API
+    PW <-->|Browser Automation| PORTAL
 ```
+
 
 - `src/portal.js` handles the authenticated Playwright browser, parsing, and serialized navigation.
 - `src/server.js` serves read-only JSON endpoints, Swagger documentation, and dashboard files.
